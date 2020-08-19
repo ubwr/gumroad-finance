@@ -7,27 +7,31 @@ import pandas_datareader.data as web
 from pandas import DataFrame
 import numpy as np
 import os
+import backtrader as bt
+import backtrader.feeds as btfeeds
 
+class DailyStrategy(bt.Strategy):
+
+    def log(self, txt, dt=None):
+        dt = dt or self.datas[0].datetime.date(0)
+        print('%s, %s' % (dt.isoformat(), txt))
+
+    def __init__(self):
+        self.dataclose = self.datas[0].close
+        self.dataopen = self.datas[0].open
+
+    def next(self):
+        #self.log('Open, %.2f' % self.dataopen[0])
+        #self.log('Close, %.2f' % self.dataclose[0])
+
+        if self.dataopen[0]:
+            self.buy()
+            #self.log('BUY CREATE, %.2f' % self.dataopen[0])
 
 today = dt.datetime.today()
 style.use('ggplot')
 
-tick = 'TSLA'
-
-start = dt.datetime(2018, 12, 1)
-end = dt.datetime(2019, start.month, start.day)
-
-##snp_oh_tickers_o = ['AAPL', 'ABBV', 'ABT', 'ACN', 'ADBE', 'AIG', 'ALL', 'AMGN', 'AMT', 'AMZN', 'AXP', 'BA', 'BAC', 'BIIB', 'BK',
-##                  'BKNG', 'BLK', 'BMY', 'BRK-B', 'C']
-##snp_oh_tickers_t = ['CAT', 'CHTR', 'CL', 'CMCSA', 'COF', 'COP', 'COST', 'CRM', 'CSCO', 'CVS', 'CVX', 'DD', 'DHR', 'DIS', 'DOW',
-##                    'DUK', 'EMR', 'EXC', 'F', 'FB']
-##snp_oh_tickers_th = ['FDX', 'GD', 'GE', 'GILD', 'GM', 'GOOG', 'GOOGL', 'GS', 'HD', 'HON', 'IBM', 'INTC', 'JNJ', 'JPM', 'KHC',
-##                     'KMI', 'KO', 'LLY', 'LMT', 'LOW']
-##snp_oh_tickers_f = ['MA', 'MCD', 'MDLZ', 'MDT', 'MET', 'MMM', 'MO', 'MRK', 'MS', 'MSFT', 'NEE', 'NFLX', 'NKE', 'NVDA', 'ORCL', 'OXY', 'PEP',
-##                  'PFE', 'PG', 'PM']
-##snp_oh_tickers_fv = ['PYPL', 'QCOM', 'RTX', 'SBUX', 'SLB', 'SO', 'SPG', 'T', 'TGT', 'TMO', 'TXN', 'UNH', 'UNP',
-##                  'UPS', 'USB', 'V', 'VZ', 'WBA', 'WFC', 'WMT']
-##snp_oh_tickers_s = ['XOM']
+tick = 'AAPL'
 
 #snp excluding: 'AIG', 'CRM', 'CSCO', 'GOOGL', 'HD', 'MDLZ', 'MET', 'MS', 'NEE', 'NFLX', 'RTX', 'SPG', 'TMO',
 # 'UNH', 'VZ', = bad data
@@ -42,9 +46,10 @@ snp_oh_tickers = ['AAPL', 'ABBV', 'ABT', 'ACN', 'ADBE', 'ALL', 'AMGN', 'AMT', 'A
 
 
 #print(len(snp_oh_tickers))
+
 #end = dt.datetime(today.year, today.month, today.day)
-start = dt.datetime(2018, 1, 2)
-end = dt.datetime(2019, start.month, start.day)
+start = dt.datetime(2019, 8, 2)
+end = dt.datetime(2020, start.month, start.day)
 #end = dt.datetime(today.year, today.month, today.day)
 
 #end = dt.datetime(start.year+1, start.month, start.day)
@@ -61,7 +66,7 @@ def calculate_daily(ticker, day_of_week):
     
     df = pd.read_csv('Data')
 
-    print(df)
+    #print(df)
 
     df['Date'] = pd.to_datetime(df['Date'])
     df['Day of Week'] = df['Date'].dt.day_name()
@@ -74,6 +79,24 @@ def calculate_daily(ticker, day_of_week):
     day_of_df = df[temp_df]
     closer_higher_than_open_df = day_of_df['Close'] > day_of_df['Open']
     higher_df = day_of_df[closer_higher_than_open_df]
+    
+    day_of_df.to_csv('Data')
+    day_of_df = pd.read_csv('Data',
+                header=0, 
+
+                index_col='Date',
+                parse_dates=True)
+
+    #print(day_of_df)
+
+##    data = bt.feeds.PandasData(dataname=day_of_df)
+##    cerebro = bt.Cerebro()
+##    cerebro.addstrategy(DailyStrategy)
+##    cerebro.adddata(data)
+##    print(day_of_week)
+##    print('Starting Portfolio Value: %.2f' % cerebro.broker.getvalue())
+##    cerebro.run()
+##    print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
 
     #print(higher_df)
 
@@ -82,16 +105,16 @@ def calculate_daily(ticker, day_of_week):
     for row in range(0, len(higher_df)):
         percent_change += ((higher_df.iloc[row]['Close'] / higher_df.iloc[row]['Open'])-1)*100
 
-    print(ticker)
-    print(percent_change)
-    print(len(higher_df))
+##    print(ticker)
+##    print(percent_change)
+##    print(len(higher_df))
 ##    if (len(higher_df)) == 0:
 ##        avg_percent_change = 0
 ##    else:
     avg_percent_change = percent_change / len(higher_df)
 
-##    print(ticker + ' ^ ' + day_of_week + ' | ' + str(round(((len(higher_df)/len(day_of_df))*100), 2))+'%'+' |'
-##          + ' AVG CHG | ' + str(round((avg_percent_change), 2)) + '% |')
+    print(ticker + ' ^ ' + day_of_week + ' | ' + str(round(((len(higher_df)/len(day_of_df))*100), 2))+'%'+' |'
+          + ' AVG CHG | ' + str(round((avg_percent_change), 2)) + '% |')
 
     return [round(((len(higher_df)/len(day_of_df))*100), 2), round((avg_percent_change), 2)]
 
@@ -146,10 +169,10 @@ def insert_data_labels(bars):
 
 insert_data_labels(percent_bar)
 insert_data_labels(avg_change_bar)
+fig.set_size_inches(12,9)
 
 plt.show()
 
-fig.set_size_inches(12,9)
 #fig.savefig('TSLA Timelapse/'+ str(start.year) + '-' + str(start.month) + '-' + str(start.day)+'.png')
 
 ########################################################################
