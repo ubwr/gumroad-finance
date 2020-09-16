@@ -9,40 +9,31 @@ import numpy as np
 import os
 import backtrader as bt
 import backtrader.feeds as btfeeds
+import csv
+import traceback 
+import concurrentpandas
+import time
 
 
-class DailyStrategy(bt.Strategy):
-
-    def log(self, txt, dt=None):
-        dt = dt or self.datas[0].datetime.date(0)
-        print('%s, %s' % (dt.isoformat(), txt))
-
-    def __init__(self):
-        self.dataclose = self.datas[0].close
-        self.dataopen = self.datas[0].open
-
-    def next(self):
-        #self.log('Open, %.2f' % self.dataopen[0])
-        #self.log('Close, %.2f' % self.dataclose[0])
-
-        if self.dataopen[0]:
-            self.buy()
-            #self.log('BUY CREATE, %.2f' % self.dataopen[0])
+def get_all_stocks():
+    fast_panda = concurrentpandas.ConcurrentPandas()
+    sp500 = load_tickers()
+    fast_panda.set_source_yahoo_finance()
+    fast_panda.insert_keys(sp500)
+    fast_panda.consume_keys_asynchronous_threads()
+    mymap = fast_panda.return_map()
+    return mymap
 
 
-def calculate_daily(ticker, day_of_week, start, end):
-    df = web.DataReader(ticker, 'yahoo', start, end)
-
+def calculate_daily(ticker, day_of_week, map):
+    df = map[ticker]
     df.to_csv('Data')
 
     df = pd.read_csv('Data')
 
-    # print(df)
-
     df['Date'] = pd.to_datetime(df['Date'])
     df['Day of Week'] = df['Date'].dt.day_name()
 
-    #daily_df = DataFrame({'% chance of closing up in daily time frame':[]})
 
     # for day_of_week in weekdays:
     temp_df = df['Day of Week'] == day_of_week
@@ -53,22 +44,8 @@ def calculate_daily(ticker, day_of_week, start, end):
     day_of_df.to_csv('Data')
     day_of_df = pd.read_csv('Data',
                             header=0,
-
                             index_col='Date',
                             parse_dates=True)
-
-    # print(day_of_df)
-
-    ##    data = bt.feeds.PandasData(dataname=day_of_df)
-    ##    cerebro = bt.Cerebro()
-    # cerebro.addstrategy(DailyStrategy)
-    # cerebro.adddata(data)
-    # print(day_of_week)
-    ##    print('Starting Portfolio Value: %.2f' % cerebro.broker.getvalue())
-    # cerebro.run()
-    ##    print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
-
-    # print(higher_df)
 
     percent_change = 0
 
@@ -76,12 +53,6 @@ def calculate_daily(ticker, day_of_week, start, end):
         percent_change += ((higher_df.iloc[row]['Close'] /
                             higher_df.iloc[row]['Open'])-1)*100
 
-    # print(ticker)
-    # print(percent_change)
-    # print(len(higher_df))
-    # if (len(higher_df)) == 0:
-    ##        avg_percent_change = 0
-    # else:
     avg_percent_change = percent_change / len(higher_df)
 
     print(ticker + ' ^ ' + day_of_week + ' | ' + str(round(((len(higher_df)/len(day_of_df))*100), 2))+'%'+' |'
@@ -160,63 +131,62 @@ def calculate_weekly(ticker, start, end):
         # if not (wkly_ohlcva.iloc[row]['Close']) > (wkly_ohlcva.iloc[row-1]['Close']) and not (wkly_ohlcva.iloc[row]['Close']) < (wkly_ohlcva.iloc[row-1]['Close']):
         if (wkly_ohlcva.iloc[row]['Close']) > (wkly_ohlcva.iloc[row-1]['Close']):
             temp_var += 1
-# print(wkly_ohlcva.iloc[row])
-# print(str(temp_var))
-# print(wkly_ohlcva.iloc[row-1])
+
         if row == len(wkly_ohlcva) - 1:
             print(ticker + ' ^ Weekly | ' + str(round((temp_var / len(wkly_ohlcva)*100), 2))+'%'
                   + ' |' + ' AVG CHG | ' + str(round((avg_percent_change), 2)) + '% |')
 
 
-def main():
-    today = dt.datetime.today()
+def save_plot(plot, ticker):
+    filename = ticker + ".png"
+    plot.savefig(filename)
+
+
+def load_tickers():
+    list = []
+    with open('sp500.csv', newline='') as csvfile:
+        spamreader = csv.reader(csvfile, delimiter=' ', quotechar='"')
+        for row in spamreader:
+            #fix lookups in yahoo finance
+            list.append(row[0])
+            print(', '.join(row))
+    return list
+
+
+def plot_daily(daily_df, start, end, stock_ticker):
+        indx = np.arange(len(daily_df['Percent']))
+        percent_label = np.arange(0, 110, 10)
+        bar_width = 0.35
+        fig, ax = plt.subplots()
+        percent_bar = ax.bar(indx - bar_width/2,
+                            daily_df['Percent'], bar_width, label='Percent')
+        avg_change_bar = ax.bar(
+            indx + bar_width/2, daily_df['Average Change'], bar_width, label='Average Change')
+        ax.set_xticks(indx)
+        ax.set_xticklabels(daily_df['Day of the Week'])
+        ax.set_yticks(percent_label)
+        ax.set_yticklabels(percent_label)
+        ax.set_ylabel('Percentage')
+        ax.set_xlabel('Day of the week')
+        ax.legend()
+        ax.set_title(stock_ticker + ' % historic closing up on a given weekday from ' + str(start.year) + '-' + str(start.month) + '-' + str(start.day)
+                    + ' to ' + str(end.year) + '-' + str(end.month) + '-' + str(end.day))
+
+        insert_data_labels(percent_bar, ax)
+        insert_data_labels(avg_change_bar, ax)
+        fig.set_size_inches(12, 9)
+
+        plt.savefig("./stock_charts/" + stock_ticker)
+
+
+def calc_historic(stock_ticker, stock_map):
     style.use('ggplot')
 
-    stock_ticker = 'AAPL'
-
-    # snp excluding: 'AIG', 'CRM', 'CSCO', 'GOOGL', 'HD', 'MDLZ', 'MET', 'MS', 'NEE', 'NFLX', 'RTX', 'SPG', 'TMO',
-    # 'UNH', 'VZ', = bad data
-
-    snp_oh_tickers = ['AAPL', 'ABBV', 'ABT', 'ACN', 'ADBE', 'ALL', 'AMGN', 'AMT', 'AMZN', 'AXP', 'BA', 'BAC', 'BIIB', 'BK',
-                      'BKNG', 'BLK', 'BMY', 'BRK-B', 'C', 'CAT', 'CHTR', 'CL', 'CMCSA', 'COF', 'COP', 'COST', 'CVS', 'CVX', 'DD', 'DHR', 'DIS', 'DOW',
-                      'DUK', 'EMR', 'EXC', 'F', 'FB', 'FDX', 'GD', 'GE', 'GILD', 'GM', 'GOOG', 'GS', 'HON', 'IBM', 'INTC', 'JNJ', 'JPM', 'KHC',
-                      'KMI', 'KO', 'LLY', 'LMT', 'LOW', 'MA', 'MCD', 'MDT', 'MMM', 'MO', 'MRK', 'MSFT', 'NKE', 'NVDA', 'ORCL', 'OXY', 'PEP',
-                      'PFE', 'PG', 'PM', 'PYPL', 'QCOM', 'SBUX', 'SLB', 'SO', 'T', 'TGT', 'TXN', 'UNP',
-                      'UPS', 'USB', 'V', 'WBA', 'WFC', 'WMT', 'XOM']
-
-    # print(len(snp_oh_tickers))
-
-    #end = dt.datetime(today.year, today.month, today.day)
-    start = dt.datetime(2019, 8, 2)
-    end = dt.datetime(2020, start.month, start.day)
-    #end = dt.datetime(today.year, today.month, today.day)
-
-    #end = dt.datetime(start.year+1, start.month, start.day)
-
-    #print('Start date: ' + str(start))
-    #print('End date: ' + str(end))
-
-    # for day_timer in range (1, 33):
-    # for year in range(0, (dt.datetime.today().year)-start.year):
-    # calculate_daily()
-    # print('__________________________')
-    ##    start.year += 1
-
-    # calculate_daily()
-    ##ax = daily_df.plot.bar(x='Day of the Week', y='Percent', rot=0)
-    ##
-    # ax.set_title('Chance of closing up per weekday from ' + str(start.year) + '-' + str(start.month) + '-' + str(start.day)
-    # + ' to ' + str(end.year) + '-' + str(end.month) + '-' + str(end.day))
-    ##
-    # plt.show()
-
-    ########################################################################
-
-    monday = calculate_daily(stock_ticker, 'Monday', start, end)
-    tuesday = calculate_daily(stock_ticker, 'Tuesday', start, end)
-    wednesday = calculate_daily(stock_ticker, 'Wednesday', start, end)
-    thursday = calculate_daily(stock_ticker, 'Thursday', start, end)
-    friday = calculate_daily(stock_ticker, 'Friday', start, end)
+    monday = calculate_daily(stock_ticker, 'Monday', stock_map)
+    tuesday = calculate_daily(stock_ticker, 'Tuesday', stock_map)
+    wednesday = calculate_daily(stock_ticker, 'Wednesday', stock_map)
+    thursday = calculate_daily(stock_ticker, 'Thursday', stock_map)
+    friday = calculate_daily(stock_ticker, 'Friday', stock_map)
 
     daily_df = DataFrame({
         'Day of the Week': ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
@@ -236,44 +206,21 @@ def main():
             friday['Average_Change']
         ]})
 
-    indx = np.arange(len(daily_df['Percent']))
-    percent_label = np.arange(0, 110, 10)
-    bar_width = 0.35
-    fig, ax = plt.subplots()
-    percent_bar = ax.bar(indx - bar_width/2,
-                         daily_df['Percent'], bar_width, label='Percent')
-    avg_change_bar = ax.bar(
-        indx + bar_width/2, daily_df['Average Change'], bar_width, label='Average Change')
-    ax.set_xticks(indx)
-    ax.set_xticklabels(daily_df['Day of the Week'])
-    ax.set_yticks(percent_label)
-    ax.set_yticklabels(percent_label)
-    ylab = ax.set_ylabel('Percentage')
-    xlab = ax.set_xlabel('Day of the week')
-    ax.legend()
-    ax.set_title(stock_ticker + ' % chance of closing up per weekday from ' + str(start.year) + '-' + str(start.month) + '-' + str(start.day)
-                 + ' to ' + str(end.year) + '-' + str(end.month) + '-' + str(end.day))
-
-    insert_data_labels(percent_bar, ax)
-    insert_data_labels(avg_change_bar, ax)
-    fig.set_size_inches(12, 9)
-
-    plt.show()
-
-    #fig.savefig('TSLA Timelapse/'+ str(start.year) + '-' + str(start.month) + '-' + str(start.day)+'.png')
-
-    ########################################################################
-
-    print(daily_df)
-
-    # SNP 500, 100
-    # GOLD
-    # OIL
-    # DIVDEND KING STOCKS
-    # rsi open and rsi close, rsi 14 period and rsi 21 period
-    # not only checking if it went up %, but also by what % did it avg going up on those days
-    # horizontal bar graph for daily ?
-    # same green day date as red day date?
+    return daily_df
 
 
+def main():
+    start = dt.datetime(2019, 8, 2)
+    end = dt.datetime(2020, dt.datetime.now().month, dt.datetime.now().day)
+
+    tickers = load_tickers()
+    all_stocks = get_all_stocks()
+    for ticker in tickers:
+        data = calc_historic(ticker, all_stocks)
+        plot_daily(data, start, end, ticker)
+
+
+startTime = time.time()
 main()
+executionTime = (time.time() - startTime)
+print('Execution time in seconds: ' + str(executionTime))
