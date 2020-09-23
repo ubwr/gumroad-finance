@@ -15,9 +15,8 @@ import concurrentpandas
 import time
 
 
-def get_all_stocks():
+def get_all_stocks(sp500):
     fast_panda = concurrentpandas.ConcurrentPandas()
-    sp500 = load_tickers()
     fast_panda.set_source_yahoo_finance()
     fast_panda.insert_keys(sp500)
     fast_panda.consume_keys_asynchronous_threads()
@@ -55,8 +54,8 @@ def calculate_daily(ticker, day_of_week, map):
 
     avg_percent_change = percent_change / len(higher_df)
 
-    print(ticker + ' ^ ' + day_of_week + ' | ' + str(round(((len(higher_df)/len(day_of_df))*100), 2))+'%'+' |'
-          + ' AVG CHG | ' + str(round((avg_percent_change), 2)) + '% |')
+    #print(ticker + ' ^ ' + day_of_week + ' | ' + str(round(((len(higher_df)/len(day_of_df))*100), 2))+'%'+' |'
+    #      + ' AVG CHG | ' + str(round((avg_percent_change), 2)) + '% |')
     return_hashmap = {'Probability': float(round(
         ((len(higher_df)/len(day_of_df))*100), 2)), 'Average_Change': float(round((avg_percent_change), 2))}
     return return_hashmap
@@ -209,18 +208,51 @@ def calc_historic(stock_ticker, stock_map):
     return daily_df
 
 
+def get_remaining_stocks(start, end, tickers, trys_remaining):
+    print("Attempts remaining: " + str(trys_remaining))
+    
+    if len(tickers) < 1:
+        return 0
+
+    if trys_remaining <= 0:
+        return 0
+    if trys_remaining <= 7 and trys_remaining > 3:
+        time.sleep(900)
+    if trys_remaining <= 3 and trys_remaining > 1:
+        time.sleep(1800)
+    if trys_remaining == 1:
+        time.sleep(2700)
+
+    all_stocks = get_all_stocks(tickers)
+    retry_list = []
+    for ticker in tickers:
+        if ticker in all_stocks:
+            try:
+                data = calc_historic(ticker, all_stocks)
+                plot_daily(data, start, end, ticker)
+            except:
+                retry_list.append(ticker)
+                print(str(ticker) + " failed to plot")
+        else:
+            retry_list.append(ticker)
+
+    for stock in retry_list:
+        print(stock + " failed to download, or failed to plot and will recursively retry now.")
+    
+    get_remaining_stocks(start, end, retry_list, trys_remaining-1)
+
+
 def main():
     start = dt.datetime(2019, 8, 2)
     end = dt.datetime(2020, dt.datetime.now().month, dt.datetime.now().day)
 
     tickers = load_tickers()
-    all_stocks = get_all_stocks()
-    for ticker in tickers:
-        data = calc_historic(ticker, all_stocks)
-        plot_daily(data, start, end, ticker)
+    get_remaining_stocks(start, end, tickers, 10)
 
+    
 
 startTime = time.time()
 main()
+
 executionTime = (time.time() - startTime)
 print('Execution time in seconds: ' + str(executionTime))
