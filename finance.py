@@ -13,6 +13,8 @@ import csv
 import traceback 
 import concurrentpandas
 import time
+import pickle
+from datetime import date
 
 
 def get_all_stocks(sp500):
@@ -22,6 +24,55 @@ def get_all_stocks(sp500):
     fast_panda.consume_keys_asynchronous_threads()
     mymap = fast_panda.return_map()
     return mymap
+
+
+def get_all_stocks_with_persistance(sp500):
+    stocks = load_todays_stocks()
+    #504 stocks in sp500.csv
+    if(stocks):
+        if(len(stocks) == 504):
+            return stocks
+    else:
+        fast_panda = concurrentpandas.ConcurrentPandas()
+        fast_panda.set_source_yahoo_finance()
+        fast_panda.insert_keys(sp500)
+        fast_panda.consume_keys_asynchronous_threads()
+        mymap = fast_panda.return_map()
+        if(len(mymap) == 504):
+            persist_todays_stocks(mymap)
+        return mymap
+
+
+
+
+def persist_map(map, filename):
+    f = open(filename,"wb")
+    pickle.dump(map,f)
+    f.close()
+
+
+def load_map(filename):
+    with open(filename, 'rb') as handle:
+        return pickle.load(handle)
+
+
+def persist_todays_stocks(map):
+    today = date.today().strftime("%m/%d/%y")
+    filename = "stocks_" + today +".pkl"
+    persist_map(map, filename)
+
+
+def load_todays_stocks():
+    today = date.today().strftime("%m/%d/%y")
+    filename = "stocks_" + today +".pkl"
+    try:
+        map = load_map(filename)
+    except:
+        print("Failed to load todays stock data from disk, will download.")
+        return False
+    
+    return map
+
 
 
 def calculate_daily(ticker, day_of_week, map):
@@ -139,6 +190,7 @@ def calculate_weekly(ticker, start, end):
 def save_plot(plot, ticker):
     filename = ticker + ".png"
     plot.savefig(filename)
+    
 
 
 def load_tickers():
@@ -148,11 +200,13 @@ def load_tickers():
         for row in spamreader:
             #fix lookups in yahoo finance
             list.append(row[0])
-            print(', '.join(row))
+            #print(', '.join(row))
+    print("Loaded " + str(len(list)) + " stock tickers.")
     return list
 
 
 def plot_daily(daily_df, start, end, stock_ticker):
+        style.use('fivethirtyeight')
         indx = np.arange(len(daily_df['Percent']))
         percent_label = np.arange(0, 110, 10)
         bar_width = 0.35
@@ -179,7 +233,7 @@ def plot_daily(daily_df, start, end, stock_ticker):
 
 
 def calc_historic(stock_ticker, stock_map):
-    style.use('ggplot')
+    style.use('fivethirtyeight')
 
     monday = calculate_daily(stock_ticker, 'Monday', stock_map)
     tuesday = calculate_daily(stock_ticker, 'Tuesday', stock_map)
@@ -209,7 +263,7 @@ def calc_historic(stock_ticker, stock_map):
 
 
 def get_remaining_stocks(start, end, tickers, trys_remaining):
-    print("Attempts remaining: " + str(trys_remaining))
+    print("Stock download attempts remaining: " + str(trys_remaining) + "/10")
     
     if len(tickers) < 1:
         return 0
@@ -223,7 +277,7 @@ def get_remaining_stocks(start, end, tickers, trys_remaining):
     if trys_remaining == 1:
         time.sleep(2700)
 
-    all_stocks = get_all_stocks(tickers)
+    all_stocks = get_all_stocks_with_persistance(tickers)
     retry_list = []
     for ticker in tickers:
         if ticker in all_stocks:
